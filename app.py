@@ -1,6 +1,6 @@
 """
 AI Document Summariser
-Uses Anthropic Claude API for intelligent document summarisation with RAG-style chunking
+Uses Groq API (FREE) for ultra-fast intelligent document summarisation with RAG-style chunking
 """
 import os
 import sys
@@ -9,9 +9,9 @@ import re
 from datetime import datetime
 
 try:
-    import anthropic
+    from groq import Groq
 except ImportError:
-    print("Install anthropic: pip install anthropic")
+    print("Installing groq... run: pip install groq")
     sys.exit(1)
 
 # ── Sample Documents ──────────────────────────────────────────────────────────
@@ -49,23 +49,23 @@ SAMPLE_DOCS = {
     Q2 2025 Business Performance Review — RetailCo India
     
     Financial Highlights:
-    RetailCo India delivered strong Q2 2025 results with total revenue of ₹2,847 crore, 
+    RetailCo India delivered strong Q2 2025 results with total revenue of Rs.2,847 crore, 
     representing 18.3% year-on-year growth. EBITDA margins improved to 14.2% from 11.8% 
     in Q2 2024, driven by operational efficiency initiatives and favourable raw material costs.
     
     Segment Performance:
-    The Online segment contributed ₹1,247 crore (43.8% of total revenue), growing 34% YoY 
+    The Online segment contributed Rs.1,247 crore (43.8% of total revenue), growing 34% YoY 
     as mobile commerce adoption accelerated in Tier 2 and Tier 3 cities. Physical retail 
-    delivered ₹1,600 crore, with same-store sales growth of 8.4%.
+    delivered Rs.1,600 crore, with same-store sales growth of 8.4%.
     
     Strategic Initiatives:
     The company launched its AI-powered personalisation engine in Q2, resulting in a 23% 
     increase in average order value and 15% improvement in customer retention rates.
-    Supply chain digitisation reduced inventory holding costs by ₹47 crore.
+    Supply chain digitisation reduced inventory holding costs by Rs.47 crore.
     
     Outlook:
     Management guides for 20-22% revenue growth in H2 2025, supported by the festive 
-    season and planned expansion into 3 new metro markets. Capital expenditure of ₹180 
+    season and planned expansion into 3 new metro markets. Capital expenditure of Rs.180 
     crore is planned for fulfilment centre upgrades.
     """,
 
@@ -117,10 +117,10 @@ def extract_key_phrases(text: str) -> list:
             key.append(s.strip())
     return key[:5]
 
-# ── AI Summarisation ─────────────────────────────────────────────────────────
+# ── AI Summarisation using Groq ───────────────────────────────────────────────
 def summarise_document(doc_text: str, doc_name: str, summary_type: str = "comprehensive") -> dict:
-    """Use Claude API to generate intelligent document summary."""
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    """Use Groq API to generate intelligent document summary."""
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
 
     chunks = chunk_document(doc_text)
     key_phrases = extract_key_phrases(doc_text)
@@ -136,9 +136,9 @@ Provide your response in this exact format:
 [summary here]
 
 **KEY POINTS** (3-5 bullet points):
-• [point 1]
-• [point 2]
-• [point 3]
+* [point 1]
+* [point 2]
+* [point 3]
 
 **CRITICAL INSIGHTS**:
 [2-3 sentences about the most important findings]
@@ -149,18 +149,28 @@ Provide your response in this exact format:
 **SENTIMENT**: [Positive/Negative/Neutral]
 **COMPLEXITY**: [Simple/Moderate/Complex]""",
 
-        "brief": f"Summarise this in 3 sentences max: {doc_text}",
+        "brief": f"Summarise this document in 3 sentences maximum: {doc_text}",
 
         "bullet": f"""Extract the 5 most important points from this document as bullet points:
 {doc_text}
 
-Format: • [Point]: [Brief explanation]"""
+Format: * [Point]: [Brief explanation]"""
     }
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    response = client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an expert document analyst. Provide clear, structured, and insightful summaries."
+            },
+            {
+                "role": "user",
+                "content": prompts.get(summary_type, prompts["comprehensive"])
+            }
+        ],
         max_tokens=1000,
-        messages=[{"role": "user", "content": prompts.get(summary_type, prompts["comprehensive"])}]
+        temperature=0.3
     )
 
     return {
@@ -169,61 +179,105 @@ Format: • [Point]: [Brief explanation]"""
         "word_count": word_count,
         "chunks_processed": len(chunks),
         "key_phrases_detected": key_phrases,
-        "summary": message.content[0].text,
-        "tokens_used": message.usage.input_tokens + message.usage.output_tokens,
+        "summary": response.choices[0].message.content,
+        "tokens_used": response.usage.total_tokens,
+        "model": "llama3-8b-8192 (via Groq)",
         "generated_at": datetime.now().isoformat()
     }
 
 # ── Main CLI ──────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("   AI DOCUMENT SUMMARISER — Powered by Claude API")
+    print("   AI DOCUMENT SUMMARISER — Powered by Groq API (FREE)")
     print("=" * 60)
-    print("\nAvailable documents:")
-    for i, name in enumerate(SAMPLE_DOCS, 1):
-        print(f"  {i}. {name}")
 
-    print("\nSummary types: comprehensive | brief | bullet")
-    print("\n[Demo Mode — Using sample documents]")
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
-        print("\n⚠️  ANTHROPIC_API_KEY not set. Running in demo mode (showing pipeline structure).")
+        print("\n⚠️  GROQ_API_KEY not set.")
+        print("\n📋 HOW TO GET FREE GROQ API KEY:")
+        print("   1. Go to: https://console.groq.com")
+        print("   2. Sign up with your email (FREE)")
+        print("   3. Go to API Keys → Create Key")
+        print("   4. Copy the key")
+        print("\n   Then run:")
+        print("   Windows : set GROQ_API_KEY=your-key-here")
+        print("   Mac/Linux: export GROQ_API_KEY=your-key-here")
+        print("\n   Then run: python app.py")
+        print("\n[Running Demo Mode — showing pipeline structure]\n")
         demo_mode()
         return
 
-    for name, text in list(SAMPLE_DOCS.items())[:1]:
-        print(f"\n🔄 Processing: {name}...")
-        result = summarise_document(text, name, "comprehensive")
-        print(f"\n{'─'*60}")
-        print(f"📄 Document    : {result['document']}")
-        print(f"📊 Word Count  : {result['word_count']}")
-        print(f"🔢 Chunks      : {result['chunks_processed']}")
-        print(f"🔑 Key Phrases : {len(result['key_phrases_detected'])} detected")
-        print(f"⚡ Tokens Used : {result['tokens_used']}")
-        print(f"\n📝 SUMMARY:\n{result['summary']}")
+    print(f"\n✅ API Key detected. Using model: llama3-8b-8192")
+    print(f"\nAvailable documents:")
+    for i, name in enumerate(SAMPLE_DOCS, 1):
+        print(f"  {i}. {name}")
 
-        with open(f"output_{name}.json", "w") as f:
+    print("\nProcessing all documents...\n")
+    os.makedirs("output", exist_ok=True)
+
+    all_results = []
+    for name, text in SAMPLE_DOCS.items():
+        print(f"🔄 Processing: {name}...")
+        result = summarise_document(text, name, "comprehensive")
+        all_results.append(result)
+
+        print(f"\n{'─'*60}")
+        print(f"📄 Document     : {result['document']}")
+        print(f"📊 Word Count   : {result['word_count']}")
+        print(f"🔢 Chunks       : {result['chunks_processed']}")
+        print(f"🔑 Key Phrases  : {len(result['key_phrases_detected'])} detected")
+        print(f"⚡ Tokens Used  : {result['tokens_used']}")
+        print(f"🤖 Model        : {result['model']}")
+        print(f"\n📝 SUMMARY:\n")
+        print(result['summary'])
+        print()
+
+        # Save individual result
+        with open(f"output/summary_{name}.json", "w") as f:
             json.dump(result, f, indent=2)
-        print(f"\n✅ Full result saved → output_{name}.json")
+        print(f"✅ Saved → output/summary_{name}.json")
+
+    # Save combined report
+    report = {
+        "pipeline_run": datetime.now().isoformat(),
+        "total_documents": len(all_results),
+        "total_tokens": sum(r["tokens_used"] for r in all_results),
+        "model": "llama3-8b-8192 (Groq - FREE)",
+        "documents_processed": [r["document"] for r in all_results]
+    }
+    with open("output/pipeline_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    print(f"\n{'='*60}")
+    print(f"✅ ALL DOCUMENTS PROCESSED!")
+    print(f"   Total documents : {report['total_documents']}")
+    print(f"   Total tokens    : {report['total_tokens']}")
+    print(f"   Results saved   → output/ folder")
+    print(f"{'='*60}")
 
 def demo_mode():
     """Show pipeline structure without API call."""
-    print("\n📋 PIPELINE DEMONSTRATION:")
     doc = list(SAMPLE_DOCS.values())[0]
     chunks = chunk_document(doc)
     phrases = extract_key_phrases(doc)
-    print(f"  ✅ Document loaded: {len(doc.split())} words")
-    print(f"  ✅ Chunked into: {len(chunks)} chunks for RAG processing")
-    print(f"  ✅ Key phrases detected: {len(phrases)}")
-    for p in phrases:
-        print(f"     • {p[:80]}...")
-    print("\n  🤖 [API call would go here → Claude generates structured summary]")
-    print("\n  📊 Expected output structure:")
-    sample = {"executive_summary": "...", "key_points": ["..."],
-              "critical_insights": "...", "sentiment": "Positive", "complexity": "Moderate"}
+
+    print("📋 PIPELINE DEMONSTRATION (Demo Mode):")
+    print(f"  ✅ Document loaded     : {len(doc.split())} words")
+    print(f"  ✅ RAG chunks created  : {len(chunks)} chunks")
+    print(f"  ✅ Key phrases found   : {len(phrases)}")
+    for p in phrases[:3]:
+        print(f"     • {p[:75]}...")
+    print(f"\n  🤖 [Groq API call would go here → LLaMA3 generates structured summary]")
+    print(f"\n  📊 Expected output structure:")
+    sample = {
+        "executive_summary": "AI in healthcare has improved diagnostic accuracy by 34%...",
+        "key_points": ["Cancer detection +34%", "Drug screening 6 weeks", "ICU readmissions -22%"],
+        "sentiment": "Positive",
+        "complexity": "Moderate"
+    }
     print(f"  {json.dumps(sample, indent=4)}")
-    print("\n✅ Set ANTHROPIC_API_KEY to enable live AI summarisation.")
+    print(f"\n✅ Set GROQ_API_KEY to enable FREE live AI summarisation.")
+    print(f"   Get free key at: https://console.groq.com")
 
 if __name__ == "__main__":
     main()
